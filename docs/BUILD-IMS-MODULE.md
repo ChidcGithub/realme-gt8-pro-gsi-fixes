@@ -8,6 +8,9 @@ firmware**. No proprietary files are distributed with this repository.
 - realme GT 8 Pro (RMX5200) with unlocked bootloader, Magisk 30.7+
 - A backup of the **stock firmware** (at minimum `super.img`), e.g. the full
   partition backup taken before flashing the GSI
+- A phh-based GSI (Android 16) — everything in this project was verified on the
+  [Evolution X Treble GSI](https://github.com/Doze-off/EvoX_treble),
+  release 2026-07-20
 - Windows PC with PowerShell 7+, Android platform-tools (`adb`), and
   [lpunpack](https://github.com/Rprop/lpunpack) (Windows builds available)
 - Optional but very helpful: a file manager / terminal with root on the phone

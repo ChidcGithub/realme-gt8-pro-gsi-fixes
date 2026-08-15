@@ -9,8 +9,10 @@ to re-derive any of this.
 ## Day 0 — A clean GSI, a broken phone
 
 The plan was simple: unlock the bootloader, back up every partition (18 GB
-`super.img` — always do this), flash a phh-based "ossi" GSI, keep the stock
-vendor/odm/my_product partitions, root with Magisk 30.7, install TWRP 3.7.1.
+`super.img` — always do this), flash the
+[Evolution X Treble GSI](https://github.com/Doze-off/EvoX_treble) (phh-based,
+release 2026-07-20), keep the stock vendor/odm/my_product partitions, root
+with Magisk 30.7, install TWRP 3.7.1.
 
 It booted. Then the problem list started:
 

@@ -1,10 +1,18 @@
 # realme GT 8 Pro — GSI Fix Toolkit
 
-**Unofficial fix toolkit and field notes** for running a phh-based GSI (Android 16, "ossi" build)
+**Unofficial fix toolkit and field notes** for running the
+[Evolution X Treble GSI](https://github.com/Doze-off/EvoX_treble) (Android 16, phh-based)
 on the **realme GT 8 Pro (RMX5200, Snapdragon 8 Elite)**.
 
 Restores carrier IMS (VoLTE / SMS / calling), fixes app crashes, unlocks the full 144 Hz
 panel and smooths system animations — all while keeping the stock vendor stack untouched.
+
+## Verified on
+
+Developed and verified against the Evolution X Treble GSI —
+release [**2026-07-20**](https://github.com/Doze-off/EvoX_treble/releases/tag/2026-07-20)
+(Android 16), on a realme GT 8 Pro (RMX5200) with stock vendor/odm/my_product
+partitions, Magisk 30.7 and TWRP 3.7.1.
 
 > This project started as a personal repair log. It is published so other RMX5200 owners
 > (or GSI tinkerers on similar Qualcomm devices) can reproduce the fixes.
@@ -125,6 +133,14 @@ The IMS module requires a build step — see [docs/BUILD-IMS-MODULE.md](docs/BUI
 - Proprietary binaries extracted from stock firmware are **for personal use on your own
   device only** and are deliberately **not redistributed** in this repository.
 - Original code in this repo is MIT-licensed; everything else follows its upstream license.
+
+## Credits
+
+- **[Doze-off / EvoX_treble](https://github.com/Doze-off/EvoX_treble)** — the Evolution X
+  Treble GSI project and its author, for the excellent base system this entire toolkit was
+  built on and verified against (release 2026-07-20).
+- **DeepSeek** — the AI pair-programming partner that co-reverse-engineered the IMS stack,
+  designed the dex patches and debugged most of the fixes documented here.
 
 ## License
 
