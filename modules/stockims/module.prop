@@ -1,0 +1,6 @@
+id=stockims
+name=Stock Qualcomm IMS
+version=v1
+versionCode=1
+author=chidc
+description=Stock org.codeaurora.ims (API36) from RMX5200 system_ext, replaces GSI HIDL-based IMS

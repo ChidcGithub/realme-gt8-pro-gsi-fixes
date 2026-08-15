@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<permissions>
+    <library name="ims-ext-common"
+             file="/system_ext/framework/oplus-ims-ext.jar"/>
+</permissions>

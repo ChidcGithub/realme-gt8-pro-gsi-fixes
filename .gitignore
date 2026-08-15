@@ -1,0 +1,22 @@
+# Windows
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Local build artifacts
+*.apk
+*.idsig
+ims_p1.apk
+ims_p2.apk
+ims_p3.apk
+ims_p4.apk
+
+# Extracted stock binaries (do not commit proprietary files)
+modules/stockims/system/system_ext/priv-app/
+modules/stockims/system/system_ext/lib64/
+modules/stockims/system/system_ext/framework/qti-telephony-utils.jar
+modules/stockims/system/system_ext/framework/qti-telephony-hidl-wrapper.jar
+
+# Node/Python
+node_modules/
+__pycache__/
