@@ -29,7 +29,7 @@ partitions, Magisk 30.7 and TWRP 3.7.1.
 | SMS — send | ✅ Fixed |
 | Calls — dial / connect / hang up | ✅ Fixed |
 | Call audio (two-way) | ✅ Fixed |
-| SMS — receive | ⚠️ In progress (MT SMS never surfaces) |
+| SMS — receive | ⚠️ Under investigation — CT SMSC requires the Oplus "CT IMS SMS auto-registration" flow that only the stock framework performs (see JOURNEY) |
 | 144 Hz display | ✅ Fixed (was locked to 60 Hz) |
 | Camera → Recents stutter | ✅ Fixed |
 | Google Camera | ✅ Works |
