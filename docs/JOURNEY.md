@@ -143,13 +143,42 @@ the presence of the bytes.
 
 ### Where it stands
 
-- IMS registered, SMS send works, calls connect and hang up cleanly.
-- **Call audio: RTP = 0 in both directions.** The media stack lives entirely in
-  the vendor side (modem ↔ `ims_rtp_daemon` ↔ audio HAL); the app never touches
-  RTP. The modem reports `isEncrypted=false` and the QTI audio HAL never gets a
-  voice session. Everything points at the modem's media SA (SRTP/IPsec) not
-  being established — next step is Qualcomm diag capture.
-- **SMS receive**: MT SMS never surfaces — likely the same modem routing.
+- IMS registered, SMS send works, calls connect and hang up cleanly,
+  **two-way call audio works** (fixed via the audio HAL patch below).
+- **SMS receive**: MT SMS never surfaces — the modem never delivers an
+  incoming SMS to the app. Under investigation.
+
+## The audio saga — chasing zero RTP
+
+Calls connected, but there was no sound. Diagnostics, in order:
+
+1. **Modem counters**: `QnsCallStatusTracker` showed `numRtpPacketsTransmitted=0`
+   and `numRtpPacketsReceived=0` for the whole call.
+2. **The smoking gun (tcpdump)**: during a call, the network sent media UDP
+   packets to the port the phone advertised in SDP — and the modem answered
+   **ICMP6 port unreachable**. The network was sending audio; the modem's
+   media plane never bound its port.
+3. **Both directions**: MO and MT calls behaved identically — not an
+   app-dial-parameter issue.
+4. **Audio HAL**: `AHAL_Telephony_QTI` logged `updateCalls CallState: Default
+   cannot be handled in state IN_ACTIVE` and never opened a voice session.
+
+Root cause: Android 16 audio frameworks moved to **HAL-owned call state
+machines** — the framework sends `CallState::DEFAULT` and expects the HAL to
+advance its own state from `setTelecomConfig` events. The GSI's audiopolicy
+**never sends `setTelecomConfig`**, while the vendor QTI HAL only advances on
+explicit ACTIVE states. Deadlock: Default states → "cannot be handled" →
+voice session never starts → the modem's media engine (which waits for the
+audio glink) never comes up → RTP rejected.
+
+Fix: reverse-engineered the HAL binary (`libaudiocorehal.qti.so`, capstone +
+pyelftools), found the `updateCalls` state loop, and rewrote **one branch**
+(`b.ne` from the log-and-skip path to the activation path) so Default updates
+start the voice session. Installed via a Magisk module. Two-way audio works.
+
+**Lesson:** when two Android components disagree on who owns a state machine,
+you don't need to fix both — find the smallest place where the ownerless
+event can be routed to the state machine that actually runs.
 
 ## Wi-Fi
 

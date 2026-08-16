@@ -28,8 +28,8 @@ partitions, Magisk 30.7 and TWRP 3.7.1.
 | IMS registration (VoLTE) | ✅ Fixed |
 | SMS — send | ✅ Fixed |
 | Calls — dial / connect / hang up | ✅ Fixed |
-| Call audio | ⚠️ In progress (modem media plane, RTP = 0) |
-| SMS — receive | ⚠️ In progress |
+| Call audio (two-way) | ✅ Fixed |
+| SMS — receive | ⚠️ In progress (MT SMS never surfaces) |
 | 144 Hz display | ✅ Fixed (was locked to 60 Hz) |
 | Camera → Recents stutter | ✅ Fixed |
 | Google Camera | ✅ Works |
@@ -62,9 +62,15 @@ The fix ports the **stock `org.codeaurora.ims` (API 36)** into a Magisk module:
 Result: framework binds the stock IMS service automatically at boot, `MMTEL` reports
 READY, calls connect (DIALING → ALERTING → ACTIVE).
 
-The remaining mile is the **media plane**: calls connect but audio RTP stays at 0 in both
-directions, and MT SMS still doesn't surface — both symptoms point at the modem's media
-routing, which is the next investigation (see [JOURNEY](docs/JOURNEY.md)).
+The last mile was **call audio**: calls connected but RTP stayed at 0 — the
+network's media packets were rejected by the modem with ICMP port-unreachable,
+and the vendor audio HAL never started a voice session. Root cause: the Android 16
+audio framework expects HAL-owned call state machines (`CallState::DEFAULT` +
+`setTelecomConfig`), but the GSI's audiopolicy never sends `setTelecomConfig` and
+the vendor HAL only advances on explicit ACTIVE states. Fixed by rewriting one
+branch in `libaudiocorehal.qti.so` (see [`patches/hal`](patches/hal)) so Default
+updates start the voice session — two-way audio confirmed. The only remaining IMS
+item is **MT SMS receive**.
 
 ---
 
@@ -76,6 +82,7 @@ routing, which is the next investigation (see [JOURNEY](docs/JOURNEY.md)).
 | WeChat risk-control self-kill | Unknown device model → WeChat calls `System.exit()` | [`scripts/spoof.sh`](scripts/spoof.sh) |
 | 60 Hz lock on a 144 Hz panel | GSI defaults `peak/min_refresh_rate` to 60 | `settings put system peak_refresh_rate 144 && settings put system min_refresh_rate 120` |
 | Camera → Recents stutter | GCam pins the display at 60 Hz; switching to Recents forces a 60 → 120/144 mode switch that collides with the animation | `min_refresh_rate = 120` |
+| Calls connect but no audio | GSI framework sends `CallState::DEFAULT` and never `setTelecomConfig`; vendor audio HAL state machine never activates | [`patches/hal`](patches/hal) + [`modules/audiopatch`](modules/audiopatch) |
 | Sluggish animations | Renderer stuck on OpenGL by a leftover Oplus prop | `setprop debug.hwui.renderer skiavk` + restart SystemUI/launcher |
 | CPU / GPU / I/O tuning | Vendor `perfd` re-applies its own CPU tunables after boot; safe extras live in the script | [`scripts/01-perf.sh`](scripts/01-perf.sh) |
 
@@ -94,7 +101,10 @@ routing, which is the next investigation (see [JOURNEY](docs/JOURNEY.md)).
 │   ├── finalpatch2.ps1        #   0x4A1B0/CA/E6  sLogMgr, sRilInner, make() nop-out
 │   ├── patchtablet.ps1        #   0x6A5B0  force isTablet = false
 │   └── encpatch2.ps1          #   0x52F18  CallEncryption experiment (shipped state)
+├── patches/hal/               # Verified binary patch for the vendor audio HAL
+│   └── patch_audio_hal.py     #   one branch: Default call state -> activate voice session
 ├── patches/experiments/       # Patches tried, measured, and reverted
+├── modules/audiopatch/        # Magisk module skeleton for the audio HAL fix
 ├── scripts/                   # Boot scripts (perf, spoof, camera jar fix)
 ├── docs/
 │   ├── JOURNEY.md             # The full exploration story (English)

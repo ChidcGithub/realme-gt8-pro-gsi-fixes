@@ -1,0 +1,6 @@
+id=audiopatch
+name=Audio HAL Call State Machine Patch
+version=v1
+versionCode=1
+author=chidc
+description=Fixes no in-call audio on GSI: treats the framework's Default call state as ACTIVE in libaudiocorehal.qti.so (see patches/hal)
