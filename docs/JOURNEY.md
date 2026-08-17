@@ -180,6 +180,104 @@ start the voice session. Installed via a Magisk module. Two-way audio works.
 you don't need to fix both — find the smallest place where the ownerless
 event can be routed to the state machine that actually runs.
 
+## The Bluetooth A2DP saga — chasing silence across three processes
+
+Bluetooth earbuds paired fine and A2DP connected, but the "audio routing"
+was totally silent — no media audio coming through. Diagnostics:
+
+1. **`dumpsys media.audio_flinger`**: A2DP output thread shown as
+   `Standby: yes`, samples written = 0, no active tracks despite AVRC
+   PLAYING and the BT profile reporting connected.
+2. **The AIDL provider factory list**: `service list` showed both
+   `IBluetoothAudioProviderFactory/sysbta` (registered by the phh sysbta
+   service in audioserver) and `IBluetoothAudioProviderFactory/default`
+   (registered by the vendor QTI audio HAL in audiohalservice.qti).
+3. **`audio_sw.so` symbol scan**: the vendor `BluetoothAudioPortAidl::start()`
+   calls `BluetoothAudioSessionInstance::GetSessionInstance()` then
+   `IsSessionReady()` — was returning **false**.
+4. **AOSP source confirmed the trap**: `BluetoothAudioSessionInstance` uses
+   a **per-process static `sessions_map_`**. `GetSessionInstance()` returns
+   the instance in the *calling* process. When the BT stack calls
+   `openProvider()` on `/sysbta`, the provider starts in **audioserver**.
+   When the provider's session is ready, it runs
+   `BluetoothAudioSessionReport::OnSessionStarted()` *in its own process*
+   — the instance found there has **no observers** (nobody in audioserver
+   registered any). The observers are in **audiohalservice.qti**, where
+   `audio_sw.so` registered on the instance keyed to `/default`. Wrong
+   session instance, never notified → `IsSessionReady()` stuck at false.
+
+Root cause: the GSI's BT stack (the `libbluetooth_jni.so` inside the
+`com.android.bt` APEX) hard-codes the service-name suffix `"/sysbta"`:
+
+```cpp
+static inline const std::string kDefaultAudioProviderFactoryInterface =
+    IBluetoothAudioProviderFactory::descriptor + "/sysbta";
+```
+
+So the provider and the session client live in different processes — the
+per-process notification can never bridge them.
+
+### Two dead ends
+
+1. **Round 1 — fasten the AHAL to `/sysbta`**: patched the vendor session
+   libraries (`libbluetooth_audio_session_aidl.so` and
+   `libbluetooth_audio_session_aidl_qti.so`) to connect to `/sysbta`
+   instead of `/default`. **No effect.** Even with both sides pointing
+   at the same service name, provider and session client still run in
+   different processes (audioserver vs audiohalservice.qti); the
+   per-process static map stays partitioned. `IsSessionReady()` doesn't
+   care about service name — it cares about which *process* the
+   `OnSessionStarted()` call fires in.
+
+2. **Round 2 — `libbluetooth_audio_session_aidl_system.so` on `/system/lib64/`**:
+   patched the system-side session lib to switch to `/default`. **No effect**
+   either, because the BT stack doesn't load that library from the system
+   partition: it runs entirely inside the APEX, pulling libraries from
+   `/apex/com.android.bt/lib64/`. Nothing outside the APEX is hittable.
+
+### The working patch — one string in the real binary
+
+The actual fix was patched in the APEX-*resident* `libbluetooth_jni.so`.
+The string `"/sysbta"` lives in `.rodata` at file offset `0xA680F`. Replace
+it with `"/default"` and the BT stack connects to the vendor's provider
+factory — so the provider starts in `audiohalservice.qti`, **same process**
+as `audio_sw.so`, and `OnSessionStarted()` finds the instance with the
+observers → `ReportSessionStatus()` fires → `IsSessionReady()` becomes
+true → A2DP sink receives PCM frames → audio.
+
+One byte of overlap: `"/sysbta"` (7 + NUL = 8 bytes) is shorter than
+`"/default"` (8 + NUL = 9 bytes). The next rodata byte was the 'B' of the
+log-only error string `"BluetoothAudio AIDL implementation does not
+exist"` — we overwrote it with NUL to be the new terminator. That error
+string is truncated by one leading character; harmless, it only prints if
+the provider factory is missing (which it isn't anymore after the patch).
+
+Installed via a Magisk module that `post-fs-data` bind-mounts the patched
+lib over `/apex/com.android.bt/lib64/libbluetooth_jni.so` (on Phh APEX
+mounts the BT stack starts via zygote, well after `post-fs-data`). The
+`audioout_*` mixer thread flipped from `Standby: yes` to
+`Standby: no, Sample rate: 44100 Hz, Output devices: 0x80
+(AUDIO_DEVICE_OUT_BLUETOOTH_A2DP)` — sound out of the earbuds confirmed.
+
+### Forced software encoding
+
+A secondary guardrail: this device's offload widgets aren't wired up on a
+GSI, so even with the session ready, A2DP would still be silent if the
+offload path were selected. Three props force the **software encoding**
+path instead (already applied by the `oplusfix` module's
+`post-fs-data.sh` via `resetprop_phh`):
+
+```bash
+ro.bluetooth.a2dp_offload.supported=false
+persist.bluetooth.enable_bt_offload=false
+persist.sys.phh.disable_a2dp_offload=true
+```
+
+**Lesson:** when two Android modules share state through a *static* map
+keyed by name, "everyone uses the same name" isn't enough — they also
+have to be in the same process. And on a phh GSI, "the BT stack" is a
+separate APEX; you can't patch it from outside the APEX.
+
 ## Wi-Fi
 
 Wi-Fi 6 (11ax, 864 Mbps) and WPA3-SAE client both work out of the box.

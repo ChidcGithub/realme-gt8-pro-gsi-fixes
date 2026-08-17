@@ -1,0 +1,6 @@
+id=bta2dp
+name=BT A2DP Audio Fix (sysbta -> default)
+version=v1
+versionCode=1
+author=chidc
+description=Fixes Bluetooth A2DP "connected but silent" on a GSI: patches libbluetooth_jni.so inside the com.android.bt APEX so the BT stack connects to the vendor /default provider factory (audiohalservice.qti) instead of the GSI /sysbta factory (audioserver). Puts provider + session in the same process so IsSessionReady() returns true. See patches/bt.

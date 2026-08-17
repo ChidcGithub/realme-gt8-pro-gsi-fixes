@@ -16,6 +16,8 @@ modules/stockims/system/system_ext/priv-app/
 modules/stockims/system/system_ext/lib64/
 modules/stockims/system/system_ext/framework/qti-telephony-utils.jar
 modules/stockims/system/system_ext/framework/qti-telephony-hidl-wrapper.jar
+modules/bta2dp/system/lib64/libbluetooth_jni.so
+modules/audiopatch/system/vendor/lib64/hw/libaudiocorehal.qti.so
 
 # Node/Python
 node_modules/
