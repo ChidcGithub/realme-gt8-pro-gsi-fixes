@@ -214,6 +214,156 @@ A leftover Oplus prop was keeping Skia on OpenGL. `debug.hwui.renderer=skiavk`
 + restarting SystemUI/launcher moved everything to Vulkan. (SystemUI/launcher
 are long-lived processes — the prop only applies to new ones.)
 
+## Fingerprint — five layers deep
+
+The under-display fingerprint sensor (UDFPS) appeared to work in settings but
+couldn't actually authenticate. The root cause ran five layers deep.
+
+### Layer 1: sensor type misreporting
+
+The vendor fingerprint HAL uses a **new AIDL path**, but the framework's
+`FingerprintSensorPropertiesInternal` constructor was still checking the
+**old HIDL path** — which doesn't exist on this device. Without the HIDL
+path, the framework fell back to reporting the sensor as
+`POWER_BUTTON` (type 1) instead of `UNDER_DISPLAY_ULTRASONIC` (type 3).
+
+### Layer 2: wrong sensor location
+
+Even with the correct type, the default sensor location coordinates were
+wrong — the framework had no idea where the sensor actually sat on the
+display. The stock Oplus config specifies `Rect(570, 2202, 870, 2502)`,
+a 300×300 px region at roughly 75% of the display height.
+
+### Layer 3: HAL control flags
+
+Two boolean flags — `halControlsIllumination` and `halHandlesDisplayTouches`
+— were both `false` in the GSI's fallback path. On this device, the vendor
+HAL **does** manage the illumination LED and the touch overlay. Without these
+flags set, the framework tried to handle illumination itself, causing the
+fingerprint icon to appear as a white rectangle on the lock screen.
+
+### Layer 4: the odex problem
+
+The framework.jar binary was modified via apktool (smali), but framework
+code lives in a pre-compiled `.odex` file. The system loads the `.odex`
+first; the `.jar` is only a fallback. So patching the `.jar` without
+regenerating the `.odex` did nothing.
+
+Fix: run `dex2oat` on-device to rebuild `services.odex` from the patched
+`.jar`, then bind-mount both.
+
+### Layer 5: framework resource loss
+
+When the `.jar` was rebuilt with apktool, it lost embedded resources
+(`res/debian.mime.types`, etc.) that other parts of the system depend on.
+This caused `WeChat` and `QQ` media storage to crash every 2 seconds in a
+NPE loop.
+
+Fix: rebuild the `.jar` by only replacing the `.dex` inside the original
+archive (zip surgery), preserving all original resources.
+
+### The lockscreen icon
+
+After fingerprint worked, a white rectangle remained on the lock screen
+over the fingerprint sensor area. Investigation revealed:
+
+- `com.android.systemui.gsi.overlay` was disabled (only changes a dimen,
+  not relevant to the issue)
+- `config_udfpsColor = 0xffffffff` (white) — the HBM illumination color
+- The real culprit: `device_entry_icon_view` FrameLayout background
+  rendering as solid white when `udfps_icon=0` (stock icon mode)
+
+Fix: `settings put system udfps_icon 1` — enables the
+`org.evolution.udfps.icons` package (pre-installed from the EvoX ROM) which
+provides a proper fingerprint icon drawable that replaces the white rectangle.
+
+---
+
+## Auto-brightness — a three-part puzzle
+
+The auto-brightness system had three independent problems, each of which
+would prevent it from working.
+
+### Part 1: the disabled flag
+
+`framework-res.apk` shipped `config_automatic_brightness_available=false`.
+The `AutomaticBrightnessStrategy` checks this flag and immediately bails
+out: `mIsAutoBrightnessEnabled` stays `false`, the brightness controller
+never starts.
+
+Fix: patch `DisplayDeviceConfig.isAutoBrightnessAvailable()` in
+`services.jar` to always return `true`.
+
+### Part 2: the missing display config
+
+The vendor's display configuration lives in XML files named by display ID.
+The actual display ID on this device (`4630947180293509523`) had no matching
+config file — the system fell back to defaults that didn't match the panel's
+brightness characteristics.
+
+Fix: create a matching `display_id_4630947180293509523.xml` with the correct
+`screenBrightnessMap` and `luxToBrightnessMapping` from the vendor's original
+config, adapted for the `high_pwm_rgb` sensor.
+
+### Part 3: the wrong sensor
+
+The Oplus vendor configured `android.sensor.light` as `module_ignore`
+(because ColorOS uses its own sensor stack). The GSI's ABC tried to use
+`light_rear` (tcs3449), but the AutomaticBrightnessStrategy kept falling
+back to a manual path.
+
+Fix: hardcode the sensor name in `SensorData.smali` to
+`qti.sensor.high_pwm_rgb` — the front-facing ambient light sensor that
+actually reflects the user's environment.
+
+### The brightness curve
+
+The original `luxToBrightnessMapping` used **nits** (2.0, 4.5, 9.0, ...)
+as the `<second>` values, but the framework expects **0–1 brightness
+scale**. The result was wildly dim auto-brightness.
+
+Fix: remap to a proper 0–1 curve: `0.0→0.01, 10→0.05, 50→0.15,
+100→0.25, 200→0.38, 400→0.52, 800→0.65, 1500→0.78, 3000→0.88,
+5000→0.94, 8000→0.97, 12000→1.00`. Verified: 1030 lux → 69% brightness.
+
+---
+
+## Performance — three profiles, automatic switching
+
+### The WALT tuning
+
+The stock `perfd` daemon re-applies its own CPU tunables after boot,
+overriding any manual settings. The fix runs `01-perf.sh` from
+`/data/adb/service.d/` at boot:
+
+- **WALT scheduler**: `up_rate_limit_us=0` (instant ramp-up),
+  `down_rate_limit_us=20000/25000` (gradual ramp-down)
+- **CPU frequencies**: `hispeed_load=60%`, `hispeed_freq=1.9G/2.88G`
+  per cluster
+- **GPU**: `min_clock=342MHz`, `idle_timer=800`
+- **I/O readahead**: 1024 KB (balance) / 2048 KB (perf)
+
+### Three profiles
+
+| Profile | CPU min | GPU min | Use case |
+|---|---|---|---|
+| `balance` | 998 MHz / 1.27 GHz | 342 MHz | Daily use |
+| `gaming` | 1.27 GHz / 1.9 GHz | 520 MHz | Heavy games |
+| `battery` | 300 MHz / 300 MHz | 152 MHz | Screen off |
+
+### Automatic switching
+
+`02-auto-profile.sh` runs as a daemon, polling every 3 seconds:
+
+- **Screen off** → `battery` profile
+- **Game in foreground** (checked against a list of 30+ package names) →
+  `gaming` profile
+- **Anything else** → `balance` profile
+
+Profile changes are logged to `/data/adb/perf_profile.log`.
+
+---
+
 ## What I'd tell someone starting this today
 
 1. **Back up the full `super.img` first.** Every fix here came back to it.
@@ -223,5 +373,9 @@ are long-lived processes — the prop only applies to new ones.)
    for priv-app APKs.
 4. When a "fix" appears to work, verify *which* fix actually worked before
    celebrating. (See: the encryption detour.)
-5. Two days in, a phone that texts, calls, and scrolls at 144 Hz beats the
-   stock ROM — and the remaining two bugs have a common suspect: the modem.
+5. **Smali modifications to framework classes are extremely fragile.** The
+   dex verifier may accept the bytecode but the runtime may crash. Test
+   incrementally — one change at a time.
+6. Two days in, a phone that texts, calls, scrolls at 144 Hz, and has working
+   fingerprint beats the stock ROM — and the remaining two bugs have a common
+   suspect: the modem.

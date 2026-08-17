@@ -5,7 +5,8 @@
 on the **realme GT 8 Pro (RMX5200, Snapdragon 8 Elite)**.
 
 Restores carrier IMS (VoLTE / SMS / calling), fixes app crashes, unlocks the full 144 Hz
-panel and smooths system animations — all while keeping the stock vendor stack untouched.
+panel, smooths system animations, and enables under-display fingerprint — all while keeping
+the stock vendor stack untouched.
 
 ## Verified on
 
@@ -29,12 +30,15 @@ partitions, Magisk 30.7 and TWRP 3.7.1.
 | SMS — send | ✅ Fixed |
 | Calls — dial / connect / hang up | ✅ Fixed |
 | Call audio (two-way) | ✅ Fixed |
-| SMS — receive | ⚠️ Under investigation — CT SMSC requires the Oplus "CT IMS SMS auto-registration" flow that only the stock framework performs (see JOURNEY) |
+| SMS — receive | ⚠️ Under investigation — CT SMSC requires the Oplus "CT IMS SMS auto-registration" flow (see JOURNEY) |
+| Under-display fingerprint (UDFPS) | ✅ Fixed |
+| Auto-brightness | ✅ Fixed (sensor switch + brightness curve + display config) |
 | 144 Hz display | ✅ Fixed (was locked to 60 Hz) |
 | Camera → Recents stutter | ✅ Fixed |
 | Google Camera | ✅ Works |
 | Aperture / WeChat crashes | ✅ Fixed |
 | WeChat risk-control self-kill | ✅ Fixed |
+| Lockscreen fingerprint icon | ✅ Fixed (UdfpsIcons.apk + udfps_icon=1) |
 | Wi-Fi 6 / WPA3 (client) | ✅ Works out of the box |
 | Wi-Fi hotspot WPA3 | ⚠️ Vendor hostapd limitation |
 | Bluetooth A2DP audio | ⚠️ GSI audio-stack / vendor HAL mismatch |
@@ -51,7 +55,7 @@ that cannot bind the API-36 AIDL `ImsRadio` exposed by the stock vendor partitio
 The fix ports the **stock `org.codeaurora.ims` (API 36)** into a Magisk module:
 
 1. Extract the stock APK + shared libraries from `system_ext` (see build guide)
-2. Binary-patch the dex in 5 verified spots to bypass Oplus-only framework calls
+2. Binary-patch the dex in 6 verified spots to bypass Oplus-only framework calls
    (offsets + byte patches are documented and scripted in [`patches/dex`](patches/dex))
 3. Provide the missing shared libraries — including a minimal stub jar and a
    rebuilt `qti-telephony-utils.jar` with classes recovered from the phh APK
@@ -78,13 +82,17 @@ item is **MT SMS receive**.
 
 | Fix | Root cause | Where |
 |---|---|---|
+| Under-display fingerprint (UDFPS) | HIDL path missing; framework reported sensor as POWER_BUTTON | [`modules/oplusfix/`](modules/oplusfix/) — framework.jar smali patch (sensorType=3, location, HAL flags) |
+| Auto-brightness | Vendor sensor configured as module_ignore; missing display config + brightness curve | [`modules/oplusfix/`](modules/oplusfix/) — services.jar patch + display_id XML + sensor_config.json |
+| Lockscreen fingerprint icon | EvoX default UDFPS icon renders as white rectangle | `settings put system udfps_icon 1` + UdfpsIcons.apk from EvoX ROM |
 | Aperture + WeChat crash | `/odm/framework/androidx.camera.extensions.impl.fake.jar` ships old Kotlin classes that pollute the classpath | [`scripts/fixfake.sh`](scripts/fixfake.sh) |
 | WeChat risk-control self-kill | Unknown device model → WeChat calls `System.exit()` | [`scripts/spoof.sh`](scripts/spoof.sh) |
 | 60 Hz lock on a 144 Hz panel | GSI defaults `peak/min_refresh_rate` to 60 | `settings put system peak_refresh_rate 144 && settings put system min_refresh_rate 120` |
-| Camera → Recents stutter | GCam pins the display at 60 Hz; switching to Recents forces a 60 → 120/144 mode switch that collides with the animation | `min_refresh_rate = 120` |
-| Calls connect but no audio | GSI framework sends `CallState::DEFAULT` and never `setTelecomConfig`; vendor audio HAL state machine never activates | [`patches/hal`](patches/hal) + [`modules/audiopatch`](modules/audiopatch) |
+| Camera → Recents stutter | GCam pins the display at 60 Hz; switching to Recents forces a 60 → 120/144 mode switch | `min_refresh_rate = 120` |
+| Calls connect but no audio | GSI framework sends `CallState::DEFAULT` and never `setTelecomConfig` | [`patches/hal`](patches/hal) + [`modules/audiopatch`](modules/audiopatch) |
 | Sluggish animations | Renderer stuck on OpenGL by a leftover Oplus prop | `setprop debug.hwui.renderer skiavk` + restart SystemUI/launcher |
-| CPU / GPU / I/O tuning | Vendor `perfd` re-applies its own CPU tunables after boot; safe extras live in the script | [`scripts/01-perf.sh`](scripts/01-perf.sh) |
+| CPU / GPU / I/O tuning | Vendor `perfd` re-applies its own CPU tunables after boot | [`scripts/01-perf.sh`](scripts/01-perf.sh) |
+| Auto performance profiles | Need automatic balance/gaming/battery switching based on foreground app | [`scripts/02-auto-profile.sh`](scripts/02-auto-profile.sh) |
 
 ---
 
@@ -105,7 +113,12 @@ item is **MT SMS receive**.
 │   └── patch_audio_hal.py     #   one branch: Default call state -> activate voice session
 ├── patches/experiments/       # Patches tried, measured, and reverted
 ├── modules/audiopatch/        # Magisk module skeleton for the audio HAL fix
-├── scripts/                   # Boot scripts (perf, spoof, camera jar fix)
+├── modules/ctreg/             # CT SMS-over-IMS registration sender (protocol v4)
+├── scripts/                   # Boot scripts (perf, spoof, camera jar fix, auto-profile)
+│   ├── 01-perf.sh             #   WALT + GPU + IO + VM tuning (balance/gaming/battery)
+│   ├── 02-auto-profile.sh     #   Foreground-app-aware auto profile switching
+│   ├── fixfake.sh             #   Bind-mount empty jar over vendor camera shim
+│   └── spoof.sh               #   Spoof device model for WeChat
 ├── docs/
 │   ├── JOURNEY.md             # The full exploration story (English)
 │   ├── BUILD-IMS-MODULE.md    # Reproducible build guide
@@ -127,7 +140,7 @@ adb shell setprop debug.hwui.renderer skiavk   # or via Developer options
 adb shell su -c 'killall com.android.systemui'
 
 # Install the boot scripts (Magisk)
-adb push scripts/01-perf.sh scripts/spoof.sh scripts/fixfake.sh /data/adb/service.d/
+adb push scripts/01-perf.sh scripts/02-auto-profile.sh scripts/spoof.sh scripts/fixfake.sh /data/adb/service.d/
 ```
 
 The IMS module requires a build step — see [docs/BUILD-IMS-MODULE.md](docs/BUILD-IMS-MODULE.md).
