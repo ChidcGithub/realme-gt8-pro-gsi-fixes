@@ -527,6 +527,97 @@ Profile changes are logged to `/data/adb/perf_profile.log`.
 
 ---
 
+## MT SMS — session 3: the chain that ends inside the modem (2026-08-18)
+
+After session 2 the picture was "three broken links in the framework". Re-testing
+with fresh logs dismantled two of them and moved the fault line somewhere much
+more interesting.
+
+### What the fresh evidence said
+
+- `registeredWithRadioTech :: imsRadioTech=14` — the stock IMS APK reports
+  **LTE (14)**, which `getImsRegTechFromRadioTech()` correctly maps to
+  `REGISTRATION_TECH_LTE (0)`. The earlier "tech=1 misread" theory was a red
+  herring (the framework's cached `regTech=1` shown by `isImsCapabilityAvailable`
+  is a stale ImsManager cache, and it does not gate MT delivery anyway).
+- The RILJ gaps (`updateImsRegistrationInfo` / `getImsRegistrationState`
+  "not supported") are real but irrelevant: stock OPPO firmware has exactly the
+  same gaps (it never uses IRadioIms either).
+- **MT calls arrive over IMS.** An incoming call produced the full
+  `UNSOL_RESPONSE_CALL_STATE_CHANGED` → `processIncomingCall` chain. So the
+  network *can* route SIP to this device's registration.
+- **MO SMS is delivered end-to-end** — a text sent from the GSI reached the
+  recipient's phone. The CT SMSC happily accepts our SIP MESSAGE.
+- Modem service status after registration: `type=5 (CALL_TYPE_SMS) status=2
+  (ENABLED)` alongside voice/video — the modem believes SMS-over-IMS is on.
+- And yet: `ImsRadioIndicationAidl.onIncomingSms()` — the very first AP-side
+  log line for an incoming IMS SMS — **never fires**. Zero QMI unsols for SMS,
+  ever, across every capture (main + radio buffers).
+
+### Two bugs in my own ctreg (fixed)
+
+1. **The registration XML went out with an empty IMSI — always.** On Android
+   11+ `TelephonyManager.getSubscriberId()` throws for non-privileged apps; the
+   receiver's `catch { v2 = "" }` swallowed it and `<c></c><e></e>` shipped to
+   10659401. Fix: `pm grant READ_PHONE_STATE` +
+   `appops set com.chidc.ctreg READ_DEVICE_IDENTIFIERS allow` (watch for
+   `reportAccessDeniedToReadIdentifiers` in logcat).
+2. **Wrong device fields.** Reverse-engineering the stock `com.oppo.ctautoregist`
+   (`p/l.smali`) gave the exact XML layout; the stock `Build.DISPLAY` turned out
+   to be `RMX5200_16.0.9.402(CN01)` (from `backup/userdata-*/buildprop.txt`),
+   `<b>` must be `RLM-RMX5200`, `<g>` must be `01`. ctreg now hardcodes all of
+   them. A registration with the byte-perfect stock payload went out at 16:13.
+
+Also documented the **ACK protocol**: CT replies from 10659401 with
+`[0x03][0x03]…` user data (stock `OplusInboundSmsHandlerImpl` turns it into the
+`RECEIVE_SMS_REG_ACK` broadcast). No ACK has arrived yet.
+
+### Ruling out the network — and the phone's AP layers
+
+The same SIM receives SMS in another phone and on the stock ROM. So:
+
+| layer | verdict |
+|---|---|
+| network / CT SMSC | ✅ works for this number elsewhere |
+| AOSP framework / stock IMS APK | ✅ all plumbing proven (MO path + unsol entry logs) |
+| **modem on the GSI** | ❌ never sees (or never forwards) MT SMS |
+
+### The vendor lead: `subsys_daemon`
+
+`RadioServiceIndication: mSubsysRadioIndication null` fires **every second**
+(pid = `subsys_daemon`, odm `libqti-radio-service.so`). That daemon hosts
+`vendor.oplus.hardware.subsys_interface.subsys_radio.ISubsysRadio` + `IImsOrtc`,
+and nothing on the GSI ever registers as its client — the same signature as
+community reports of GSI ports that can't receive SMS (e.g. OnePlus 13 /
+LineageOS).
+
+Extracting the stock partitions from the `super.img` backup (lpunpack —
+LP metadata v10.2, EROFS images mount fine on-device with
+`mount -t erofs -o loop`) surfaced **five missing OPPO jars** in
+`system_ext/framework`: `oplus-subsystem-service{,-ext}.jar`,
+`oplus-subsys-tool.jar`, `subsys-imsrtp-plugin.jar`,
+`vendor-subsystem-service.jar`. Decompiling them shows antenna optimization /
+WFC / QTI radio helpers and IMS-RTP glue — **no SMS code found so far**, so the
+`mSubsysRadioIndication` spam may yet be benign. Not convicted.
+
+### Where this leaves it
+
+The only unknown left is what the modem actually puts in its SIP REGISTER
+(SIP runs inside the modem — tcpdump on rmnet sees nothing; the QTI
+"data channel" that would move SIP to the AP is `ServiceStatus type=28` =
+DISABLED, and the AP can't turn it on). If the REGISTER lacks
+`+g.3gpp.smsip`, CT's IP-SM-GW simply never tries IMS delivery — which matches
+every observation, including MO working.
+
+Next moves, in order of cost:
+
+1. **Differentiator without reflash:** drop a China-Unicom/Mobile SIM in slot 2.
+   If it receives IMS SMS on the GSI → CT-specific (whitelist); if not →
+   generic GSI REGISTER gap.
+2. **Ground truth:** temporarily restore stock (full `super.img` backup exists),
+   capture the modem baseline (QImsService VERBOSE logs, service status list,
+   qcrilNr.db, ImsConfig), then diff against the GSI.
+
 ## What I'd tell someone starting this today
 
 1. **Back up the full `super.img` first.** Every fix here came back to it.

@@ -30,7 +30,7 @@ partitions, Magisk 30.7 and TWRP 3.7.1.
 | SMS — send | ✅ Fixed |
 | Calls — dial / connect / hang up | ✅ Fixed |
 | Call audio (two-way) | ✅ Fixed |
-| SMS — receive | ⚠️ Under investigation — CT SMSC requires the Oplus "CT IMS SMS auto-registration" flow (see JOURNEY) |
+| SMS — receive | 🔬 Under investigation — MO works end-to-end, MT never reaches the modem under GSI; fault line isolated to modem-side REGISTER/forwarding (see JOURNEY "session 3") |
 | Under-display fingerprint (UDFPS) | ✅ Fixed |
 | Auto-brightness | ✅ Fixed (sensor switch + brightness curve + display config) |
 | 144 Hz display | ✅ Fixed (was locked to 60 Hz) |

@@ -1,0 +1,6 @@
+id=ctautoreg
+name=CT IMS SMS Auto-Registration
+version=v1
+versionCode=1
+author=chidc
+description=Ports the stock com.oppo.ctautoregist priv-app to the GSI - registers SMS-over-IMS with China Telecom SMSC (10659401)

@@ -22,3 +22,6 @@ modules/audiopatch/system/vendor/lib64/hw/libaudiocorehal.qti.so
 # Node/Python
 node_modules/
 __pycache__/
+
+# stock CTAutoRegist APK (carved from user's own firmware, do not commit)
+modules/ctautoreg/system/priv-app/CTAutoRegist/CTAutoRegist.apk

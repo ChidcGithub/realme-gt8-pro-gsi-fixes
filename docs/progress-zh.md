@@ -86,3 +86,40 @@
 - 重复标签(:goto_0)导致构建失败
 - adjustLightSensorRate 的 p0 覆写 bug:原代码在 registerListener 调用中把 p0(this/controller)覆盖为 mHandler;任何后续访问 controller 字段的代码都会访问 Handler 对象 → 类型错误 → 开机循环
 - AutomaticBrightnessController$2.smali(内部类 SensorEventListener)直接修改 outer class 字段(iget/iput)会导致 DEX 验证失败 → 开机循环;需要完全不同的架构(如单独的 listener 类)
+
+---
+## 2026-08-18 会话3 — MT 短信深挖: 断链终于指向 modem
+
+### 旧理论推翻
+- imsRadioTech 实际=14(LTE), 映射正确 → "tech=1 误读"理论作废
+- RILJ 的 IRadioIms 缺失原厂同样存在(OPPO 从不用 AOSP IRadioIms) → 无关
+
+### 新证据链(全部设备侧验证)
+- MT 来电 IMS 正常到达 → 网络能路由 SIP 到本机注册
+- MO 短信端到端送达(对方手机收到) → 电信 SMSC 接受本机 SIP MESSAGE
+- modem ServiceStatus: type=5(SMS) status=2(ENABLED)
+- 但 ImsRadioIndicationAidl.onIncomingSms() 零命中 → QMI 层从未收到 MT 短信
+- 换机/原厂均能收 → 网络侧排除, 问题 100% 在 GSI 的 modem 行为差异
+
+### ctreg 两处致命 bug 修复
+1. IMSI 一直为空: getSubscriberId 被权限拒绝, catch 吞掉异常
+   → 修复: pm grant READ_PHONE_STATE + appops READ_DEVICE_IDENTIFIERS allow
+2. XML 字段错误: <b>应 RLM-RMX5200, <f>应原厂 DISPLAY(RMX5200_16.0.9.402(CN01)),
+   <g>应 01 (原值来自 backup/userdata/buildprop.txt + ctautoregist 逆向)
+- 已逆向 ACK 协议: 10659401 回 [0x03][0x03] 头(OplusInboundSmsHandlerImpl)
+
+### vendor 线索
+- subsys_daemon(libqti-radio-service.so) 承载 ISubsysRadio/IImsOrtc,
+  mSubsysRadioIndication null 每秒报错, GSI 无客户端(与一加13 GSI 无短信案例同特征)
+- super.img(lpunpack 解包, LP v10.2)提取原厂分区发现 5 个缺失 subsystem jar
+  → 反编译初判辅助功能(天线/WFC/RTP), 无 SMS 直接引用, 未定罪
+
+### 剩余唯一未知
+- modem SIP REGISTER 是否缺 +g.3gpp.smsip (SIP 走 modem 内部, 抓不到;
+  DataChannel type=28 DISABLED 无法打开)
+- 下次: ①卡槽2插联通/移动卡鉴别 CT 专属 vs 通用缺陷 ②备份后恢复原厂抓基线
+
+### 工具链沉淀
+- lpunpack 解包 super → 设备 mount -t erofs 浏览原厂分区
+- QImsService VERBOSE 开关: setprop log.tag.QImsService VERBOSE
+- radio buffer 抓 RILJ: logcat -b radio

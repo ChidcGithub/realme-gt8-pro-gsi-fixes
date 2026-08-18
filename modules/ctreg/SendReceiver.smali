@@ -24,13 +24,29 @@
 
     check-cast v1, Landroid/telephony/TelephonyManager;
 
-    if-nez v1, :cond_noimsi
-
     const-string v2, ""
+
+    if-eqz p2, :cond_noimsi
+
+    const-string v3, "imsi"
+
+    invoke-virtual {p2, v3}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+
+    move-result-object v3
+
+    if-eqz v3, :cond_use_extra
+
+    move-object v2, v3
 
     goto :goto_imsi
 
+    :cond_use_extra
     :cond_noimsi
+    if-nez v1, :cond_noimsi2
+
+    goto :goto_imsi
+
+    :cond_noimsi2
     :try_imsi
     invoke-virtual {v1}, Landroid/telephony/TelephonyManager;->getSubscriberId()Ljava/lang/String;
 
@@ -53,28 +69,22 @@
     const-string v9, ""
 
     :cond_op
-    sget-object v3, Landroid/os/Build;->DISPLAY:Ljava/lang/String;
-
-    if-nez v3, :cond_disp
-
-    const-string v3, ""
-
-    :cond_disp
+    const-string v3, "RMX5200_16.0.9.402(CN01)"
     new-instance v4, Ljava/lang/StringBuilder;
 
     invoke-direct {v4}, Ljava/lang/StringBuilder;-><init>()V
 
-    const-string v5, "<a><b>RLM-CN<c>"
+    const-string v5, "<a><b>RLM-RMX5200<c>"
 
     invoke-virtual {v4, v5}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
 
-    invoke-virtual {v4, v9}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v4, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
 
     const-string v5, "<d>000000000000000<e>"
 
     invoke-virtual {v4, v5}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
 
-    invoke-virtual {v4, v9}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v4, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
 
     const-string v5, "<f>"
 
@@ -82,7 +92,7 @@
 
     invoke-virtual {v4, v3}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
 
-    const-string v5, "<g></a>"
+    const-string v5, "<g>01</a>"
 
     invoke-virtual {v4, v5}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
 
