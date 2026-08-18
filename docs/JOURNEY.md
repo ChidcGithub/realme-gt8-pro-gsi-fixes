@@ -286,6 +286,71 @@ capabilities (`cmd wifi get-softap-supported-features` returns empty), so the
 framework hides the option. WPA2 + strong passphrase is the workaround; lowest
 priority.
 
+## Display cutout — centered hole on a left-aligned world
+
+The realme GT 8 Pro has a **centered** 32 MP punch-hole camera at native
+coordinates `(720, 94)` px (radius 44) on a 1440×3136 display. The GSI
+(`framework-res.apk`) ships `config_mainBuiltInDisplayCutout = ""` (empty),
+so the system falls back to... nothing useful. Worse, the pre-installed
+`DisplayCutoutEmulationHole` overlay (phh/EvoX) hard-codes a **left-aligned**
+cutout path (`@left` anchor), which produces the wrong status bar insets and
+clips content on the wrong side.
+
+### How AOSP cutout coordinates work
+
+This took a while to figure out. The AOSP `CutoutSpecification` parser uses
+**origin-relative** coordinates:
+
+- **Default origin (no anchor)** = `(screenWidth/2, 0)` — top center of the
+  screen. Path coordinates are relative to this point.
+- `@left` → origin = `(0, 0)` (top-left corner)
+- `@right` → origin = `(screenWidth, 0)` (top-right corner)
+- `@bottom` → y shifted by `displayHeight`
+
+There is **no `@center` anchor** — that was our first mistake. Using
+`@center` caused a parse failure and a boot loop.
+
+### The correct path
+
+With center-top origin `(720, 0)`, a circle of radius 44 centered at
+`(720, 94)` is:
+
+```
+M 0,50 A 44,44 0 0 1 44,94 44,44 0 0 1 0,138 44,44 0 0 1 -44,94 44,44 0 0 1 0,50 Z
+```
+
+- `M 0,50` = start at (720, 50) in screen coords (top of circle)
+- Arcs sweep to `(44,94)`, `(0,138)`, `(-44,94)`, back to `(0,50)`
+- `status_bar_height_portrait = 148px` (bottom of circle at y=94+44=138, plus
+  10px padding)
+- Rect approximation: `M -84,0 h 168 v 148 h -168 Z` (168×148 px centered)
+
+### The priority trap
+
+The overlay was built, signed, installed, enabled... and had **no effect**.
+`dumpsys display` still showed the old `@left` cutout. Root cause: the
+built-in `DisplayCutoutEmulationHole` overlay has **priority 2147483647**
+(`Integer.MAX_VALUE`), the highest possible. Our overlay at priority 999
+was being completely overridden.
+
+Fix: `service.sh` in the Magisk module disables the built-in hole overlay
+at boot after `sys.boot_completed=1`. The `cmd overlay disable` removes it
+from the active set, and our overlay's values take effect.
+
+### Verification
+
+After the fix, `dumpsys display` confirmed:
+
+```
+cutoutSpec={M 0,50 A 44,44 0 0 1 44,94 44,44 0 0 1 0,138 44,44 0 0 1
+            -44,94 44,44 0 0 1 0,50 Z}
+insets=Rect(0, 148 - 0, 0)
+boundingRect=Rect(636, 0 - 804, 148)
+```
+
+The bounding rect is correctly centered at `x=720` (636+804)/2, 168 px wide,
+148 px tall. Status bar is properly offset below the camera hole.
+
 ## Display — the 60 Hz conspiracy
 
 For weeks the phone felt "okay but not flagship-smooth". Diagnostics showed

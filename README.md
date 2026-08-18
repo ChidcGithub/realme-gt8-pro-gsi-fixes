@@ -42,6 +42,7 @@ partitions, Magisk 30.7 and TWRP 3.7.1.
 | Wi-Fi 6 / WPA3 (client) | ✅ Works out of the box |
 | Wi-Fi hotspot WPA3 | ⚠️ Vendor hostapd limitation |
 | Bluetooth A2DP audio | ✅ Fixed (/sysbta → /default in APEX lib) |
+| Center punch-hole cutout | ✅ Fixed (RRO overlay, correct cutoutSpec + status bar height) |
 
 ---
 
@@ -111,6 +112,7 @@ audio flows. Three props force the software encoding path as a guardrail
 | Camera → Recents stutter | GCam pins the display at 60 Hz; switching to Recents forces a 60 → 120/144 mode switch | `min_refresh_rate = 120` |
 | Calls connect but no audio | GSI framework sends `CallState::DEFAULT` and never `setTelecomConfig` | [`patches/hal`](patches/hal) + [`modules/audiopatch`](modules/audiopatch) |
 | Bluetooth A2DP — pairs, plays silence | BT stack connects to `/sysbta` (audioserver); vendor audio HAL connects to `/default` (audiohalservice.qti) — per-process session map prevents `OnSessionStarted()` from ever flagging the observers | [`patches/bt`](patches/bt) + [`modules/bta2dp`](modules/bta2dp) |
+| Center punch-hole cutout misaligned | GSI defaults to left-aligned cutout `@left`; the realme GT 8 Pro has a centered 32 MP punch-hole. Status bar not offset correctly, notch area clips content | Custom RRO overlay (`gtcutout`) + service.sh disables built-in `DisplayCutoutEmulationHole` (priority MAX_INT overrides all) |
 | Sluggish animations | Renderer stuck on OpenGL by a leftover Oplus prop | `setprop debug.hwui.renderer skiavk` + restart SystemUI/launcher |
 | CPU / GPU / I/O tuning | Vendor `perfd` re-applies its own CPU tunables after boot | [`scripts/01-perf.sh`](scripts/01-perf.sh) |
 | Auto performance profiles | Need automatic balance/gaming/battery switching based on foreground app | [`scripts/02-auto-profile.sh`](scripts/02-auto-profile.sh) |
@@ -137,6 +139,7 @@ audio flows. Three props force the software encoding path as a guardrail
 ├── patches/experiments/       # Patches tried, measured, and reverted
 ├── modules/audiopatch/        # Magisk module skeleton for the audio HAL fix
 ├── modules/bta2dp/            # Magisk module skeleton for the BT A2DP fix
+├── modules/gtcutout/          # Magisk module: RRO overlay for GT 8 Pro center cutout
 ├── modules/ctreg/             # CT SMS-over-IMS registration sender (protocol v4)
 ├── scripts/                   # Boot scripts (perf, spoof, camera jar fix, auto-profile)
 │   ├── 01-perf.sh             #   WALT + GPU + IO + VM tuning (balance/gaming/battery)

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+
+    <!-- Center punch hole at (720, 94) r=44 relative to center-top origin (720, 0).
+         Circle: top(0,50) right(44,94) bottom(0,138) left(-44,94) -->
+    <string translatable="false" name="config_mainBuiltInDisplayCutout">M 0,50 A 44,44 0 0 1 44,94 44,44 0 0 1 0,138 44,44 0 0 1 -44,94 44,44 0 0 1 0,50 Z</string>
+
+    <!-- Rect approximation covering cutout area: 168w x 148h centered, starting at y=0 -->
+    <string translatable="false" name="config_mainBuiltInDisplayCutoutRectApproximation">M -84,0 h 168 v 148 h -168 Z</string>
+
+    <!-- Fill cutout area in black for anti-aliasing -->
+    <bool name="config_fillMainBuiltInDisplayCutout">true</bool>
+
+    <!-- Status bar height must be >= rect height to cover the cutout -->
+    <dimen name="status_bar_height_portrait">148px</dimen>
+    <dimen name="status_bar_height_landscape">28dp</dimen>
+
+    <string name="overlay_label">GT8 Pro Center Cutout</string>
+</resources>

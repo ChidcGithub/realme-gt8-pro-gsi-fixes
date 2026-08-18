@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.chidc.overlay.gt8pro_cutout"
+    android:versionCode="2"
+    android:versionName="2.0">
+
+    <overlay
+        android:targetPackage="android"
+        android:priority="999"
+        android:isStatic="true" />
+
+    <application
+        android:label="@string/overlay_label"
+        android:allowBackup="false"
+        android:hasCode="false" />
+</manifest>
